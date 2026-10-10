@@ -8,6 +8,8 @@ IETF で議論中の **AAuth**（[draft-hardt-oauth-aauth-protocol-11](https://d
 
 この実装は -11 に**準拠していません**。規範的要件ごとの対応状況は [docs/conformance-11.md](docs/conformance-11.md) にまとめています（MUST の不足を含みます）。
 
+記事の構成・調査メモ・原稿は [docs/blog/README.md](docs/blog/README.md) で管理します。
+
 ## 検証の前提
 
 - 認可フローは固定スクリプトの Agent・PS・Resource の三者構成（§4.2.4）です。既存の AP はテスト用の署名付き agent token と metadata / JWKS を提供します。`/lab/enroll` は bootstrap の代替であり、bootstrap 自体は検証しません。独立した AS・LLM・多段呼び出しは今回の範囲に含めません。
