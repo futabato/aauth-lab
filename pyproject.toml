@@ -1,0 +1,55 @@
+[project]
+name = "aauth-lab"
+version = "0.1.0"
+description = "Hands-on lab for the AAuth protocol (draft-hardt-oauth-aauth-protocol-11)"
+readme = "README.md"
+authors = [
+    { name = "futabato", email = "01futabato10@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "cryptography>=50.0.2",
+    "fastapi>=0.143.0",
+    "http-sfv>=0.9.9",
+    "httpx>=0.28.1",
+    "pydantic>=2.14.0",
+    "python-multipart>=0.0.32",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[project.scripts]
+aauth-lab = "aauth_lab.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4.0",
+    "pytest>=9.1.1",
+    "ruff>=0.17.0",
+]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+# http_sfv ships py.typed but its containers are untyped UserDict/UserList.
+# All access goes through aauth_lab.core.sfv, which narrows with isinstance.
+module = ["http_sfv", "http_sfv.*"]
+disallow_any_generics = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "FAST"]
+# Japanese UI strings and event titles routinely exceed the limit; the formatter owns code width.
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
