@@ -2,15 +2,19 @@
 
 > 推敲中の原稿です。調査基準日は2026年10月9日です。2026年10月10日に主要な一次資料を部分照合し、10月11日に背景説明の公式資料を追加確認しました。仕様の説明と再現実験は `draft-hardt-oauth-aauth-protocol-11` に固定します。実験結果は未実測で、正式公開に向けた確認を残しています。
 
-「古い資料を整理して」と頼むと、エージェントは資料を読むだけでなく、分類し、移動し、不要と判断した資料を削除するかもしれません。どの操作まで最初から任せるかは、依頼の言葉だけでは決まりません。ここでは、読むことと分類することを許し、移動や削除には追加の許可が必要な方針を選びます。
+AIエージェントにAPIを使って仕事を任せると、途中で必要な操作が変わることがあります。本人が許した範囲を超える操作が必要になったとき、誰が追加の許可を判断し、API側で何を検査するかを設計する必要があります。この記事では、OAuthとその拡張でできる制御を確かめた上で、AAuthという認可プロトコルの提案がその判断をどう分担し、何が議論になっているのかを整理します。
+
+その分担を具体的に考えるため、「古い資料を整理して」という依頼を例にします。途中で削除が必要になったときに、本人への確認、許可の伝達、APIでの検査がどうつながるかを追います。例として、読むことと分類することは最初から許し、移動や削除には追加の許可を求めることにします。これは説明のために置く方針であり、すべての仕事やAAuthの仕様が求めるものではありません。
 
 エージェントが文書Aの削除を必要と判断したら、本人に何を確認し、その返答を誰が受け取るかを決める必要があります。承認・拒否・判断待ちによって、その後の処理も変わります。判断を待つ間は、APIが削除を実行しない状態を保たなければなりません。
 
 本人が「文書Aの削除」を承認したなら、実行するAPIもその対象に従う必要があります。画面でAを示していても、渡した権限がすべての文書の削除を許し、APIが対象を検査しなければ、別の文書Bも削除できてしまいます。承認した対象を許可に表し、APIでその制約を強制して初めて、確認画面と実際の処理が結び付きます。
 
+ここでいうトークンは、APIへのアクセス権限や要求を送る主体に関する情報を、システム間で伝えるデータです。LLM（大規模言語モデル）が文章を処理・生成するときの単位である「トークン」とは意味が異なります。
+
 有効なトークンを使った要求であること、操作が権限の範囲内であること、操作が本人の今の意図に沿うことは、別々の条件です。初めから広い削除権限を与えていた場合、エージェントが重要な文書を不要と判断しても、認可の検査は通り得ます。認可プロトコルが検証する情報と、仕事としてその操作が適切かという判断を区別して考えます。
 
-人が画面を操作する場面では、その人が対象と操作を選びます。操作の選択をエージェントへ任せると、その確認をいつ、誰の判断で行うかを仕組みとして設計する必要があります。操作の限定や途中の確認はOAuthとその拡張でも構成できます。AAuthは、エージェントの識別、本人側の許可、APIを提供する側の認可を、どの役割へ配置するかを設計し直す提案です。この記事では、OAuthが解決した問題を出発点に、MCPサーバー開発で残った判断と、Dick HardtによるAAuthの設計・議論を追います。対象は個人提出のInternet-Draftであり、標準化が完了した仕様としては扱いません。[AAuth protocol-11](https://datatracker.ietf.org/doc/html/draft-hardt-oauth-aauth-protocol-11)、[Datatrackerの対象版](https://datatracker.ietf.org/doc/draft-hardt-oauth-aauth-protocol/11/)
+この例で見たのは、権限の範囲、本人への確認、APIでの制約を結び付ける必要があることです。操作の限定や途中の確認は、OAuthとその拡張でも構成できます。AAuthが何を設計し直そうとしているかを考えるには、まずOAuthが提供してきた制御を押さえる必要があります。そこから、MCPサーバー開発で具体化した実装判断と、Dick HardtによるAAuthの設計・議論を追います。対象は個人提出のInternet-Draftであり、標準化が完了した仕様としては扱いません。[AAuth protocol-11](https://datatracker.ietf.org/doc/html/draft-hardt-oauth-aauth-protocol-11)、[Datatrackerの対象版](https://datatracker.ietf.org/doc/draft-hardt-oauth-aauth-protocol/11/)
 
 ## 1. OAuthの成立と拡張
 
@@ -18,7 +22,7 @@
 
 OAuthが導入される前の委譲方法の一つに、本人のユーザー名とパスワードを第三者のアプリへ渡す方法がありました。2012年のOAuth 2.0のRFCは、この方法ではアプリが本人の秘密情報を保管し、本人と同じ資格情報で広くアクセスできてしまう点を問題として挙げています。一つのアプリだけを止めたい場合にも、パスワードの変更が他のアプリへ影響します。[RFC 6749 §1](https://www.rfc-editor.org/rfc/rfc6749#section-1)
 
-2012年10月にRFC 6749として公開されたOAuth 2.0は、本人のパスワードをクライアントへ渡す代わりに、認可サーバーが限定されたアクセス権を表すトークンを発行するモデルです。クライアント、認可サーバー、リソースサーバー、リソース所有者の役割を分け、本人の資格情報を扱う処理と、アプリが許可された範囲でAPIを使う処理を分離します。[OAuth 2.0 / RFC 6749 §1](https://www.rfc-editor.org/rfc/rfc6749#section-1)
+2012年10月にRFC 6749として公開されたOAuth 2.0は、本人のパスワードをクライアントへ渡す代わりに、認可サーバーが限定されたアクセス権を表すアクセストークンを発行するモデルです。クライアント、認可サーバー、リソースサーバー、リソース所有者の役割を分け、本人の資格情報を扱う処理と、アプリが許可された範囲でAPIを使う処理を分離します。[OAuth 2.0 / RFC 6749 §1](https://www.rfc-editor.org/rfc/rfc6749#section-1)
 
 このモデルはGoogle APIやMicrosoft GraphなどのAPIへの委任アクセスに使われています。エージェントもAPIを利用するクライアントとして、この認可基盤を使えます。ここでいう認可はアクセスを許す判断であり、本人が誰かを確かめる認証とは目的が異なります。ログインとAPIの利用許可が同じ画面に現れても、本人の確認とアクセス権の付与は別の処理です。[GoogleのOAuth 2.0案内](https://developers.google.com/identity/protocols/oauth2)、[Microsoft Graphの委任アクセス](https://learn.microsoft.com/en-us/graph/auth-v2-user)
 
@@ -32,30 +36,32 @@ OAuthが導入される前の委譲方法の一つに、本人のユーザー名
 
 限定したトークンでも、盗まれて使われれば許可の範囲内で被害が生じます。DPoP（Demonstrating Proof of Possession）は、アクセストークンを公開鍵へ結び付け、使用時に対応する秘密鍵の所持を証明する拡張です。トークンだけを盗まれた場合の不正使用を抑えます。DPoP自体はクライアント認証ではなく、鍵の所持だけでアクセスを許す仕組みでもありません。トークンの有効性と権限の検査は引き続き必要です。[DPoP / RFC 9449 §3](https://www.rfc-editor.org/rfc/rfc9449#section-3)
 
-OAuthと拡張には、委譲した権限を狭め、使用する鍵を確かめる手段があります。それを組み込む際には、クライアント登録をどう管理し、追加確認をどこで行い、トークンをどこへ保管するかを決めます。HellōのMCPサーバー開発では、この運用上の選択が具体的な課題になりました。
+OAuthと拡張には、委譲した権限を狭め、使用する鍵を確かめる手段があります。それを実際のシステムへ組み込む際には、クライアント登録をどう管理し、追加確認をどこで行い、トークンをどこへ保管するかを決める必要があります。
 
 ## 2. MCPサーバー開発での課題
 
+この実装判断が現れた具体例として、HellōのMCPサーバー開発を取り上げます。MCP（Model Context Protocol）は、AIアシスタントなどのアプリケーションを、外部のデータやツールへ接続するためのプロトコルです。[MCP 2025-06-18の概要](https://modelcontextprotocol.io/specification/2025-06-18) 既存の管理APIをそのツールとして提供したHellōの事例は、登録、削除の確認、トークン保管の配置を考える手掛かりになります。
+
 Hellōは、GoogleやAppleなどのログイン手段を、OpenID Connect（OIDC）による一つの接続でアプリに組み込める認証サービスです。開発者は自分のアプリをHellōに登録し、名前、ロゴ、ログイン後の戻り先などを設定します。Developer ConsoleやQuickstartが使う管理APIはOAuthで保護されており、その操作をAIアシスタントへ提供するのがHellōのMCPサーバーです。[Hellō](https://www.hello.coop/)、[Getting Started](https://www.hello.dev/docs/getting-started/)、[Admin API](https://www.hello.dev/docs/apis/admin/)、[Admin MCP Server](https://www.hello.dev/docs/admin-mcp/)
 
-2025年8月4日、HardtはHellōのアプリを作成・管理するMCPサーバーの実装を紹介しました。VS Code、Cursor、Claudeなどのクライアントから、管理APIをツールとして呼び出す試みです。以下で追う登録・削除確認・トークン保管の選択は、この実装での経験です。[Hardt「Say Hellō to AI」](https://blog.hello.coop/posts/say-hello-to-ai)
+2025年8月4日、HardtはHellōのアプリを作成・管理するMCPサーバーの実装を紹介しました。VS Code、Cursor、Claudeなどのクライアントから、管理APIをツールとして呼び出す試みです。[Hardt「Say Hellō to AI」](https://blog.hello.coop/posts/say-hello-to-ai)
 
 ### Hellō管理APIへの接続
 
-MCP（Model Context Protocol）の2025年6月18日版は、HTTPで認可を使う場合にOAuth 2.1ベースのフローを推奨しています（SHOULD）。MCPで認可を使うこと自体は任意で、stdioでの実行は別に扱います。Hellōの例は、保護された管理APIをクライアントから呼ぶために、この認可を組み込む場面です。[MCP 2025-06-18 Authorization](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization)
+MCPの2025年6月18日版は、HTTPで認可を使う場合にOAuth 2.1ベースのフローを推奨しています（SHOULD）。MCPで認可を使うこと自体は任意で、stdioでの実行は別に扱います。Hellōの例は、保護された管理APIをクライアントから呼ぶために、この認可を組み込む場面です。[MCP 2025-06-18 Authorization](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization)
 
 この例には二種類のアプリ登録が出てきます。一つは、Hellōログインを使う開発者のアプリを、名前・ロゴ・戻り先などとともに登録する業務上の操作です。登録されるHellōアプリのClient IDは、ログイン設定に使います。これが管理APIの操作対象です。[Getting Started](https://www.hello.dev/docs/getting-started/)
 
 もう一つは、その管理操作を呼び出すMCPクライアントのOAuth登録です。DCR（Dynamic Client Registration、動的クライアント登録）を使う場合、呼び出し側のメタデータを認可サーバーへ送り、OAuthの`client_id`などを受け取ります。このIDは保護されたMCPサーバーへの接続に使い、管理対象のHellōアプリのClient IDとは目的が異なります。[DCR / RFC 7591](https://www.rfc-editor.org/rfc/rfc7591)、[MCPのクライアント登録](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization#dynamic-client-registration)
 
-本人の権限で管理APIを使うには、クライアント登録とは別に本人のログインと同意を経て、トークンを取得します。OAuthの`client_id`は呼び出し側を識別する値であり、本人のIDや削除の許可を表しません。次の図は、登録とトークン取得を済ませた後のツール呼び出しだけを示します。Hardtの実装の通信記録ではなく、トークンの形式や管理APIへの資格情報の渡し方も特定しません。
+本人の権限で管理APIを使うには、クライアント登録とは別に本人のログインと同意を経て、アクセストークンを取得します。OAuthの`client_id`は呼び出し側を識別する値であり、本人のIDや削除の許可を表しません。次の図は、登録とアクセストークン取得を済ませた後のツール呼び出しだけを示します。Hardtの実装の通信記録ではなく、トークンの形式や管理APIへの資格情報の渡し方も特定しません。
 
 ```mermaid
 flowchart LR
     C["MCPクライアント"]
     S["MCPサーバー"]
     API["Hellō管理API"]
-    C -->|"トークン提示・ツール呼び出し"| S
+    C -->|"アクセストークン提示・ツール呼び出し"| S
     S -->|"アプリの作成・管理"| API
 ```
 
@@ -73,9 +79,9 @@ HellōのWebコンソールでは、削除の際に利用者が`DELETE`と入力
 
 ### トークンの保管
 
-もう一つの懸念は、クライアントが保持するトークンでした。Hardtは漏えいの危険を考慮してrefresh tokenを発行せず、必要になったら再認可する方針を述べています。これは漏えい事故の報告ではありません。長く使える秘密情報をどの実行環境に置き、失効や再認可を誰が管理するかという設計上の懸念です。[Hardtのトークン保管に関する説明](https://blog.hello.coop/posts/say-hello-to-ai)
+もう一つの懸念は、クライアントが保持するトークンでした。Hardtは漏えいの危険を考慮して、アクセストークンを再取得するためのrefresh tokenを発行せず、必要になったら再認可する方針を述べています。これは漏えい事故の報告ではありません。長く使える秘密情報をどの実行環境に置き、失効や再認可を誰が管理するかという設計上の懸念です。[Hardtのトークン保管に関する説明](https://blog.hello.coop/posts/say-hello-to-ai)
 
-Hellōでは、削除を除くscopeとrefresh tokenを発行しない方針で、クライアントへ渡す権限と資格情報を限定しました。それでも、複数の接続先で認可フローとトークンを管理し、必要な対話を仲介する仕事はクライアントに残ります。Hardtはこの負担に対し、処理をMCPサーバー側へ移す提案を出しました。[SEP 1299](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1299)
+Hellōでは、削除を除くscopeとrefresh tokenを発行しない方針で、クライアントへ渡す権限と資格情報を限定しました。それでも、クライアントの接続先が増えると、接続先ごとに認可フローとトークンを管理し、必要な対話を仲介する仕事はクライアントに残ります。Hardtはこの負担に対し、処理をMCPサーバー側へ移す提案を出しました。[SEP 1299](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1299)
 
 ## 3. SEP 1299からAAuthへの経緯
 
@@ -83,7 +89,7 @@ Hellōでは、削除を除くscopeとrefresh tokenを発行しない方針で�
 
 Hardtは実装記事と同じ2025年8月4日に、MCPのSEP 1299を提出しました。SEPはSpecification Enhancement Proposal、仕様の改善提案です。この提案では、接続先の発見、OAuthフローの管理、トークンの保持などをMCPサーバー側へ移します。動機として挙げたのは、Hellōの実装経験とIETF 123での議論を踏まえ、いくつかの用途ではMCPクライアントとサーバーの間にOAuthを置く構成が適さないと考えたことでした。これは提案者による問題の捉え方です。[SEP 1299のMotivation](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1299)
 
-クライアントはインスタンスに対応する鍵を持ち、HTTP要求へ署名します。サーバーは必要なときに利用者との直接の対話を求め、その後の処理を続けます。背後のAPIへ接続するためのOAuthは維持できます。たとえばMCPサーバーがOAuthのトークンを取得して既存APIを呼び出し、MCPクライアント側ではそのトークンを保持しない構成を考えられます。
+クライアントはインスタンスに対応する鍵を持ち、HTTP要求へ署名します。サーバーは必要なときに利用者との直接の対話を求め、その後の処理を続けます。背後のAPIへ接続するためのOAuthは維持できます。たとえばMCPサーバーがOAuthのアクセストークンを取得して既存APIを呼び出し、MCPクライアント側ではそのトークンを保持しない構成を考えられます。
 
 情報をサーバー側へまとめる分、クライアントの実装負担は減り得ます。サーバーには、複数利用者の情報を保管し、取り違えずに使う責任が増えます。SEP自身も、サーバー侵害による複数利用者のトークンの露出を挙げています。保管場所の変更は、信頼先と侵害時の影響の変更でもあります。[SEP 1299の設計とSecurity Considerations](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1299)
 
@@ -99,7 +105,7 @@ SEPのクライアントインスタンスの鍵、署名付き要求、認可�
 
 ### 登場主体
 
-protocol-11に登場する役割を先に整理します。本人（User／仕様上のPerson）と、本人を代表するサーバー（PS）は別の主体です。どの役割が認可に加わるかはアクセスモードによって異なります。[protocol-11 §4.3–4.4](https://datatracker.ietf.org/doc/html/draft-hardt-oauth-aauth-protocol-11#section-4.3)、[protocol-11 §4.2](https://datatracker.ietf.org/doc/html/draft-hardt-oauth-aauth-protocol-11#section-4.2)
+本人側の判断とAPI側の検査をどう結び付けるかを読むため、protocol-11に登場する役割を先に整理します。本人（User／仕様上のPerson）と、本人を代表するサーバー（PS）は別の主体です。どの役割が認可に加わるかはアクセスモードによって異なります。[protocol-11 §4.3–4.4](https://datatracker.ietf.org/doc/html/draft-hardt-oauth-aauth-protocol-11#section-4.3)、[protocol-11 §4.2](https://datatracker.ietf.org/doc/html/draft-hardt-oauth-aauth-protocol-11#section-4.2)
 
 | 日本語名・呼称 | 役割 | 登場するモード |
 |---|---|---|
@@ -114,11 +120,13 @@ protocol-11に登場する役割を先に整理します。本人（User／仕�
 
 ### 本人側の許可とAPI側の検査
 
-文書Aの削除を本人側の方針で許すかは、PSが判断します。PSのSupervisorは、要求された権限を許可するか、本人へ確認するか、拒否するかを決める機構です。事前の方針で許せる要求まで、人間が毎回判断する構成に限りません。[protocol-11 §7、§8](https://datatracker.ietf.org/doc/html/draft-hardt-oauth-aauth-protocol-11#section-7)
+冒頭の資料整理の例に戻ると、文書Aの削除を本人側の方針で許すかは、PSが判断します。PSのSupervisorは、要求された権限を許可するか、本人へ確認するか、拒否するかを決める機構です。事前の方針で許せる要求まで、人間が毎回判断する構成に限りません。[protocol-11 §7、§8](https://datatracker.ietf.org/doc/html/draft-hardt-oauth-aauth-protocol-11#section-7)
 
 削除を実行するResourceは、届いたトークン、要求の署名、必要なscopeを検査した上で、対象への業務ポリシーを適用します。所有者の一致を確かめることと、保護文書の削除を禁止することは別のポリシーです。本人側が削除を許しても、Resourceが禁止する文書を削除できるわけではありません。PSが発行した権限と、実行する操作をResourceが照合して、この分担が成立します。[protocol-11 §4.4](https://datatracker.ietf.org/doc/html/draft-hardt-oauth-aauth-protocol-11#section-4.4)、[protocol-11 §4.3–4.4](https://datatracker.ietf.org/doc/html/draft-hardt-oauth-aauth-protocol-11#section-4.3)
 
-この分担で文書Aだけを許すには、対象の制約を表す情報とResource側の検査も必要です。以下で扱うラボは、通常の`docs.delete` scopeへの追加同意を選びます。AAuthがすべての削除に追加同意を義務付けるわけではありません。このscopeは「文書Aを一度だけ削除する許可」と同義ではなく、対象や回数を限定する制御は後続検証へ分けます。
+文書Aだけを許すには、対象の制約を表す情報とResource側の検査も必要です。許可の取得とAPIの検査を観測するため、以下では架空の文書APIを使うラボを例にします。
+
+ラボでは、この分担を段階的に確かめるため、まず通常の`docs.delete` scopeへの追加同意と実行時の検査を扱うことにします。AAuthがすべての削除に追加同意を義務付けるわけではありません。このscopeは「文書Aを一度だけ削除する許可」と同義ではなく、対象や回数を限定する制御は後続検証へ分けます。
 
 ### 追加許可の取得
 
@@ -126,7 +134,7 @@ protocol-11に登場する役割を先に整理します。本人（User／仕�
 
 本人へ確認するときには、Resourceが示す要求と、Agentが示す理由を区別します。Agentが「この文書を削除すれば作業が終わる」と説明しても、それはAgent側の主張です。PSが表示する同意画面では、Resourceが何の権限を要求したかと、Agentのjustificationを混ぜずに示す設計になっています。最終的に許すscopeは、本人やSupervisorの判断を経て決まります。[protocol-11 §7.4](https://datatracker.ietf.org/doc/html/draft-hardt-oauth-aauth-protocol-11#section-7.4)
 
-次の図は、401の後に追加許可を取得し、削除要求を再送する成功経路です。署名付き要求を前提とし、本人との対話、PSのpending URLへのpoll、署名検証の細部は省略します。固定スクリプトのAgent・PS・架空の文書APIを使うラボの設計・検証条件であり、実行結果は未実測です。202によるResource側の保留は第6節で区別します。
+次の図は、削除に必要な権限が足りないことを示すHTTP 401応答の後に、追加許可を取得し、削除要求を再送する成功経路です。署名付き要求を前提とし、本人との対話、PSとの承認待ちの通信、署名検証の細部は省略します。固定スクリプトのAgent・PS・架空の文書APIを使うラボの設計・検証条件であり、実行結果は未実測です。202によるResource側の保留は第6節で区別します。
 
 ```mermaid
 sequenceDiagram
@@ -194,7 +202,7 @@ Hardtも、OAuthへ機能を追加できる可能性自体は否定していま�
 
 ## 6. 運用上の課題と検証計画
 
-PSやASが発行した権限を受け入れるには、発行元を信頼する条件、承認を待つ間の処理、許可を取り消した後に実行を止める方法を確かめる必要があります。ここからは、ラボの前提を固定するために、この三つの運用上の課題と操作単位の制約を整理します。
+前節で挙げた信頼先や障害時の振る舞いを比べるには、トークンを発行できるかだけでなく、その前後の処理も確かめる必要があります。PSやASが発行した権限を受け入れる条件、承認を待つ間の処理、許可を取り消した後に実行を止める方法を整理し、比較の前提とラボで観測する対象を決めます。操作を特定の対象や回数に限定する条件も、通常のscopeとは分けて扱います。
 
 ### 信頼先と鍵の運用
 
