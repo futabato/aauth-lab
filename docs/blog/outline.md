@@ -10,9 +10,9 @@
 
 仕様説明と再現実験は [固定仕様 protocol-11](../spec/draft-hardt-oauth-aauth-protocol-11.txt) に限定します。個人提出の Internet-Draft であり、標準化完了や WG 採用を意味しません。実験結果は未実測です。後続版や editor's copy、歴史資料の初稿を、この版の説明や実験に混ぜません。
 
-**導入**：AIエージェントが仕事の途中で必要な操作を変えるとき、本人が許した範囲を超える操作を誰が判断し、API側で何を検査するかを主題として先に示す。OAuthと拡張でできる制御を確かめ、認可プロトコルの提案であるAAuthが判断をどう分担し、何が議論になっているかを読む目的にする。
+**導入**：資料の整理や予定の調整などの仕事をAIエージェントに依頼する場面から始める。エージェントが必要な操作を選びながら進める途中で、最初に許可された範囲を超える操作が必要になった場合、どのように追加の許可を求めればよいかを問う。誰が追加の許可を判断し、操作を実行する側が何を検査するかを主題とする。OAuthと拡張でできる制御を確かめ、認可プロトコルの提案であるAAuthが判断をどう分担し、何が議論になっているかを読む目的にする。
 
-「古い資料を整理して」という例を使う理由は、途中で削除が必要になった場面を通じて、本人への確認・許可の伝達・APIでの検査のつながりを具体的に追えることにある。この三点を予告してから、「例として、読み取りと分類は最初から許し、移動や削除には追加の許可を求めることにする」と仮定を置く。すべての仕事やAAuth仕様の要求とはしない。
+「古い資料を整理して」という例を使う理由は、途中で削除が必要になった場面を通じて、本人への確認・許可の伝達・実行時の検査のつながりを具体的に追えることにある。APIはこの例で、外部の文書管理サービスへ操作を要求するための仕組みとして初めて説明する。この例のエージェントはAPIを使うものとし、すべてのエージェントに必須とはしない。この三点を予告してから、「例として、読み取りと分類は最初から許し、移動や削除には追加の許可を求めることにする」と仮定を置く。すべての仕事やAAuth仕様の要求とはしない。
 
 ここでのトークンを、アクセス権限や要求主体の情報をシステム間で伝えるデータと説明する。LLMが文章を処理・生成するときの単位であるトークンとは意味が異なることを明示する。
 
@@ -20,7 +20,7 @@
 
 操作の限定や途中の確認はOAuthと拡張でも構成できるため、AAuthの設計変更を理解する前提としてOAuthが提供してきた制御を先に押さえる。そこからMCPでの実装判断、SEP、AAuthの設計と議論へ進む。
 
-## 1. OAuthの成立と拡張
+## 1. OAuthによるアプリケーションへの権限の委譲
 
 **結論**：OAuthと拡張は、本人の資格情報を第三者へ渡さずに権限を委譲し、その範囲と使用する鍵を制御する手段を提供する。
 
@@ -40,7 +40,7 @@ DPoPによる鍵の所持証明を説明し、クライアント認証そのも�
 
 **根拠**：[RFC 6749 §1](https://www.rfc-editor.org/rfc/rfc6749#section-1)、[RAR / RFC 9396](https://www.rfc-editor.org/rfc/rfc9396)、[DPoP / RFC 9449](https://www.rfc-editor.org/rfc/rfc9449)。利用例は原稿のGoogle・Microsoft公式資料を参照する。
 
-## 2. MCPサーバー開発での課題
+## 2. HellōのMCPサーバー開発で表面化した認可の課題
 
 **結論**：HellōのMCPサーバー開発では、登録の運用、削除の確認、トークンの保管について、既存基盤をどう使うかの実装判断が必要になった。
 
@@ -66,7 +66,7 @@ refresh tokenをアクセストークンの再取得に使うものと説明し�
 
 **根拠**：[Hellō Admin MCP Server](https://www.hello.dev/docs/admin-mcp/)、[Hardtの実装記事](https://blog.hello.coop/posts/say-hello-to-ai)、[MCP 2025-06-18の概要](https://modelcontextprotocol.io/specification/2025-06-18)、[MCP 2025-06-18 Authorization](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization)、[Elicitation](https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation)、[DCR / RFC 7591](https://www.rfc-editor.org/rfc/rfc7591)。Hellōの背景説明は原稿の公式資料を参照する。
 
-## 3. SEP 1299からAAuthへの経緯
+## 3. MCPの認可に関する提案からAAuthに至る経緯
 
 **結論**：SEP 1299とAAuthには認可処理の配置を変える関心が共通するが、同じ構成・採否手続きの提案ではない。
 
@@ -82,7 +82,7 @@ discovery・OAuthフロー・トークン保管の移管、インスタンスの
 
 **根拠**：[SEP 1299](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1299)、[閉鎖理由のコメント](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1299#issuecomment-3244750018)、[SEP 1415](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1415)、[初稿 -00](https://datatracker.ietf.org/doc/html/draft-hardt-aauth-protocol-00)、[protocol-11](https://datatracker.ietf.org/doc/html/draft-hardt-oauth-aauth-protocol-11)。閉鎖コメントは2026-10-10に照合し、その後の採用状況は未確認。
 
-## 4. AAuthの設計
+## 4. AAuthの登場主体と各主体が担う認可処理
 
 **結論**：AAuthはAgentの識別、本人側の許可、リソース側の発行判断と実行時の検査を役割へ配置し、署名付き要求とトークンで結び付ける。
 
@@ -148,7 +148,7 @@ ASのtoken endpointを呼ぶのはPSとする。初回紐付け・同意、APか
 
 **根拠**：固定仕様の§4.2–4.4、§5–9、§11.3、§11.5。同意表示は§7.4、四者構成の取得経路は§4.2.5・§9.3。詳細な参照リンクは原稿に置く。
 
-## 5. OAuth拡張とAAuthをめぐる議論
+## 5. AAuthはOAuthの拡張か、新しいプロトコルか
 
 **結論**：議論の争点は、必要な機能をOAuthの拡張で構成するか、Agentの鍵と本人側の判断を中心に別の基礎から定めるかであり、優位性や採用方針は確定していない。
 
@@ -160,7 +160,7 @@ ASのtoken endpointを呼ぶのはPSとする。初回紐付け・同意、APか
 
 **根拠と留保**：[protocol-11付録C.4.5](https://datatracker.ietf.org/doc/html/draft-hardt-oauth-aauth-protocol-11#appendix-C.4.5)、2026-10-05 interimの[公開ノート](https://notes.ietf.org/notes-ietf-interim-2026-oauth-06-oauth)と[チャットログ](https://datatracker.ietf.org/doc/chatlog-interim-2026-oauth-06-202610051300/)、[Token Exchange / RFC 8693](https://www.rfc-editor.org/rfc/rfc8693)。会合資料は2026-10-10に部分照合した。公開ノートを正式議事録・採用決定とせず、その後の最新状態は未確認とする。
 
-## 6. 運用上の課題と検証計画
+## 6. AAuthで解決できること・残る課題と、本記事での検証計画
 
 **結論**：採用する配置の評価には、信頼・待機・停止・操作制約を実装と運用で確かめ、観測できた結果と残る条件を分ける必要がある。
 
