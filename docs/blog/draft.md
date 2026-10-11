@@ -2,13 +2,11 @@
 
 > 推敲中の原稿です。調査基準日は2026年10月9日です。2026年10月10日に主要な一次資料を部分照合し、10月11日に背景説明の公式資料を追加確認しました。仕様の説明と再現実験は `draft-hardt-oauth-aauth-protocol-11` に固定します。実験結果は未実測で、正式公開に向けた確認を残しています。
 
-Google Driveのプラグインを接続したCodexから資料を探せるようになり、AIエージェントに外部サービスの情報を参照させる使い方が身近になってきました。こうした連携を設定する際には、どの情報へのアクセスを許すかを指定します。エージェントに任せる仕事の裏側には、アクセス権限を与え、許可された範囲を検査する認可の仕組みがあります。[OpenAIのプラグイン案内](https://learn.chatgpt.com/docs/plugins)
+AIエージェントに外部サービスの情報を参照させる使い方が身近になってきました。CodexにSlackやGoogle Driveのプラグインを入れて接続させれば、Codexから簡単に資料を探させることができ、ユーザはAIエージェントが裏側でどう動いているかをあまり意識せずに便益を受けられます。
 
-アプリケーションにアクセス権限を委譲する仕組みとしては、OAuthが広く使われています。MCP（Model Context Protocol）でも、本記事で参照する2025年6月18日版では、HTTPで認可を使う場合にOAuth 2.1ベースのフローを推奨しています。認可の利用自体は任意ですが、AIエージェントと外部サービスの連携にも既存の認可基盤が使われています。[OAuth 2.0 / RFC 6749](https://www.rfc-editor.org/rfc/rfc6749.html)、[MCP 2025-06-18 Authorization](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization)
+当然ながらAIエージェントがサービス内の情報を参照するには、ユーザがAIエージェントにアクセスを許可する必要があります。一方サービス側は、そのAIエージェントから操作を要求されるたびに、与えられた権限で実行できる操作かを確認します。例えば、読み取りだけを許可されたAIエージェントから削除の操作を要求されても、その操作は拒否される必要があります。
 
-OAuthでは、アクセストークンを使ってアプリケーションに与えたアクセス権限を伝えます。ここでいうトークンはアクセス権限などをシステム間で伝えるデータで、LLM（大規模言語モデル）が文章を処理する単位とは異なります。サービス側は、要求された操作がその権限の範囲に収まるかを検査します。ただし、権限の範囲内であることと、ユーザーが今回その操作を意図していることは同じではありません。たとえば、仮想の文書管理サービスで、文書を削除する権限を持つエージェントが「古い資料を整理して」という依頼から削除を選んでも、ユーザーは移動や分類だけを想定しているかもしれません。どこまでをあらかじめ許可し、どの操作で改めて確認するかは、サービスを連携させる際に設計する必要があります。
-
-OAuth 2.0のRFC 6749で編集者を務めたDick Hardtは、HellōのMCPサーバーを開発した経験から、クライアント登録の管理、削除操作の確認、トークンの保管について実装上の懸念を挙げました。[RFC 6749の編集者表記](https://www.rfc-editor.org/rfc/rfc6749.html)、[Hardtの実装記事](https://blog.hello.coop/posts/say-hello-to-ai) その後に提案したAAuthでは、認可処理を担う主体の構成から見直しています。[AAuth protocol-11 §4.4](https://datatracker.ietf.org/doc/html/draft-hardt-oauth-aauth-protocol-11#section-4.4) 一方、OAuthの拡張として取り込むべきだという意見もあり、新しいプロトコルを設ける必要性自体が議論されています。[2026年10月5日のOAuth作業部会の公開ノート](https://notes.ietf.org/notes-ietf-interim-2026-oauth-06-oauth)
+このように、誰にどの情報へのアクセスや操作を許すかを決め、個々の要求に対して実行を許可するかを判断することを、認可と呼びます。本稿では今IETFで議論されているAAuthと呼ばれる認可プロトコルを取り上げ、その背景にある課題と、AIエージェントの認可の仕組みをどう設計するかをめぐる議論を紹介します。
 
 ## 1. OAuthによるアプリケーションへの権限の委譲
 
@@ -24,11 +22,15 @@ RFC 6749の§1は、こうした問題への対応を次のように説明しま
 
 認可の層を設け、クライアントとリソース所有者の役割を分けるという説明です。2012年10月にRFC 6749として公開されたOAuth 2.0は、本人のパスワードをクライアントへ渡す代わりに、認可サーバーが限定されたアクセス権を表すアクセストークンを発行するモデルです。クライアント、認可サーバー、リソースサーバー、リソース所有者の役割を分け、本人の資格情報を扱う処理と、アプリが許可された範囲でAPI（サービスへ操作を要求する仕組み）を使う処理を分離します。[OAuth 2.0 / RFC 6749 §1](https://www.rfc-editor.org/rfc/rfc6749#section-1)
 
-このモデルはGoogle APIやMicrosoft GraphなどのAPIへの委任アクセスに使われています。エージェントもAPIを利用するクライアントとして、この認可基盤を使えます。ここでいう認可はアクセスを許す判断であり、本人が誰かを確かめる認証とは目的が異なります。ログインとAPIの利用許可が同じ画面に現れても、本人の確認とアクセス権の付与は別の処理です。[GoogleのOAuth 2.0案内](https://developers.google.com/identity/protocols/oauth2)、[Microsoft Graphの委任アクセス](https://learn.microsoft.com/en-us/graph/auth-v2-user)
+ここでいうトークンはアクセス権限などをシステム間で伝えるデータで、LLM（大規模言語モデル）が文章を処理する単位とは異なります。
+
+OAuthはGoogle APIやMicrosoft GraphなどのAPIへの委任アクセスに広く使われています。AIエージェントもAPIを利用するクライアントとして、この認可基盤を使えます。ここでいう認可はアクセスを許す判断であり、本人が誰かを確かめる認証とは目的が異なります。ログインとAPIの利用許可が同じ画面に現れても、本人の確認とアクセス権の付与は別の処理です。[GoogleのOAuth 2.0案内](https://developers.google.com/identity/protocols/oauth2)、[Microsoft Graphの委任アクセス](https://learn.microsoft.com/en-us/graph/auth-v2-user)
+
+Codexのプラグイン接続の設定は、[OpenAIのプラグイン案内](https://learn.chatgpt.com/docs/plugins)にまとめられています。
 
 ### 追加同意と操作の制限
 
-本人の資格情報を渡さずに済んでも、アプリへどこまで任せるかは別に設計します。たとえば、資料整理を読み取りの権限で始め、削除が必要になった時点で追加同意を求める構成をOAuthでも採れます。追加同意、再認証、操作直前の確認のうち何を求めるかは、アプリケーションの方針です。
+本人の資格情報を渡さずに済んでも、AIエージェントへどこまで任せるかは別に設計します。たとえば、資料整理を読み取りの権限で始め、削除が必要になった時点で追加同意を求める構成をOAuthでも採れます。追加同意、再認証、操作直前の確認のうち何を求めるかは、AIエージェントとサービスを連携させる際に決める方針です。
 
 許可を細かく表現する拡張がRAR（Rich Authorization Requests）です。RFC 9396のAbstractは、追加する情報を次のように説明します。
 
@@ -52,19 +54,19 @@ OAuthと拡張には、委譲した権限を狭め、使用する鍵を確かめ
 
 ## 2. HellōのMCPサーバー開発で表面化した認可の課題
 
-この実装判断が現れた具体例として、HellōのMCPサーバー開発を取り上げます。MCP（Model Context Protocol）は、AIアプリケーションを外部のデータやツールへ接続するための共通プロトコルです。Anthropicは2024年11月25日の公開記事で、モデルの性能が向上しても、業務データや既存システムとの接続には個別の実装が必要になることを課題として挙げました。
+この実装判断が現れた具体例として、HellōのMCPサーバー開発を取り上げます。MCP（Model Context Protocol）は、AIエージェントなどを外部のデータやツールへ接続するための共通プロトコルです。Anthropicは2024年11月25日の公開記事で、モデルの性能が向上しても、業務データや既存システムとの接続には個別の実装が必要になることを課題として挙げました。
 
 > Every new data source requires its own custom implementation, making truly connected systems difficult to scale.
 >
 > 出典：[Anthropic「Introducing the Model Context Protocol」（2024年11月25日）](https://www.anthropic.com/news/model-context-protocol)
 
-新しいデータソースを追加するたびに専用の実装が必要になり、連携先を増やしにくい、という説明です。MCPは、AIアプリケーションと外部データやツールの間で共通の連携方式を使い、この負担を減らすことを目指しました。
+新しいデータソースを追加するたびに専用の実装が必要になり、連携先を増やしにくい、という説明です。MCPは、AIエージェントなどと外部データやツールの間で共通の連携方式を使い、この負担を減らすことを目指しました。
 
 接続の手順を共通にしても、本人からアクセスの許可を得ることや、要求された操作が権限の範囲内かを判断することは、認可の設計として残ります。本記事では、HTTPで認可を使う場合の仕様として2025年6月18日版を参照します。既存の管理APIをMCPツールとして提供したHellōの事例は、登録、削除の確認、トークン保管の配置を考える手掛かりになります。[MCP 2025-06-18 Authorization](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization)
 
-Hellōは、GoogleやAppleなどのログイン手段を、OpenID Connect（OIDC）による一つの接続でアプリに組み込める認証サービスです。開発者は自分のアプリをHellōに登録し、名前、ロゴ、ログイン後の戻り先などを設定します。Developer ConsoleやQuickstartが使う管理APIはOAuthで保護されており、その操作をAIアシスタントへ提供するのがHellōのMCPサーバーです。[Hellō](https://www.hello.coop/)、[Getting Started](https://www.hello.dev/docs/getting-started/)、[Admin API](https://www.hello.dev/docs/apis/admin/)、[Admin MCP Server](https://www.hello.dev/docs/admin-mcp/)
+Hellōは、GoogleやAppleなどのログイン手段を、OpenID Connect（OIDC）による一つの接続でアプリに組み込める認証サービスです。開発者は自分のアプリをHellōに登録し、名前、ロゴ、ログイン後の戻り先などを設定します。Developer ConsoleやQuickstartが使う管理APIはOAuthで保護されており、その操作をAIエージェントへ提供するのがHellōのMCPサーバーです。[Hellō](https://www.hello.coop/)、[Getting Started](https://www.hello.dev/docs/getting-started/)、[Admin API](https://www.hello.dev/docs/apis/admin/)、[Admin MCP Server](https://www.hello.dev/docs/admin-mcp/)
 
-2025年8月4日、HardtはHellōのアプリを作成・管理するMCPサーバーの実装を紹介しました。VS Code、Cursor、Claudeなどのクライアントから、管理APIをツールとして呼び出す試みです。[Hardt「Say Hellō to AI」](https://blog.hello.coop/posts/say-hello-to-ai)
+OAuth 2.0のRFC 6749で編集者を務めたDick Hardtは、2025年8月4日、Hellōのアプリを作成・管理するMCPサーバーの実装を紹介しました。VS Code、Cursor、Claudeなどのクライアントから、管理APIをツールとして呼び出す試みです。[RFC 6749の編集者表記](https://www.rfc-editor.org/rfc/rfc6749.html)、[Hardt「Say Hellō to AI」](https://blog.hello.coop/posts/say-hello-to-ai)
 
 ### Hellō管理APIへの接続
 
@@ -152,7 +154,7 @@ SEPのクライアントインスタンスの鍵、署名付き要求、認可�
 
 ### 本人側の許可とAPI側の検査
 
-ここでは、読み取り・移動・削除をAPIで行える架空の文書管理サービスで、冒頭の資料整理を考えます。読むことと分類することは最初から許し、移動や削除には追加の許可を求める方針を置きます。これは説明のための設定であり、すべての仕事やAAuthの仕様が求めるものではありません。
+ここでは、読み取り・移動・削除をAPIで行える架空の文書管理サービスで、資料整理をAIエージェントに任せる例を考えます。読むことと分類することは最初から許し、移動や削除には追加の許可を求める方針を置きます。これは説明のための設定であり、すべての仕事やAAuthの仕様が求めるものではありません。
 
 この構成で、削除に必要な権限を本人側の方針で許すかは、PSが判断します。PSのSupervisorは、要求された権限を許可するか、本人へ確認するか、拒否するかを決める機構です。事前の方針で許せる要求まで、人間が毎回判断する構成に限りません。[protocol-11 §7、§8](https://datatracker.ietf.org/doc/html/draft-hardt-oauth-aauth-protocol-11#section-7)
 
@@ -195,7 +197,7 @@ Resourceが常にAgentの識別子を見るわけではありません。person 
 
 ### Missionと本人の意図
 
-鍵と権限を確かめても、その削除が依頼に必要かは分かりません。Missionは、Agentが何の仕事を行うかという文脈をPSへ伝える枠組みです。PSは要求された権限を仕事の文脈と照らして判断できます。ただし、Missionの記述や`approved_tools`が、そのまま対象・回数の制約や、すべてのローカルツール実行の強制へ変わるわけではありません。[protocol-11 §8](https://datatracker.ietf.org/doc/html/draft-hardt-oauth-aauth-protocol-11#section-8)
+権限の範囲内であることと、ユーザが今回その操作を意図していることは同じではありません。Missionは、Agentが何の仕事を行うかという文脈をPSへ伝える枠組みです。PSは要求された権限を仕事の文脈と照らして判断できます。ただし、Missionの記述や`approved_tools`が、そのまま対象・回数の制約や、すべてのローカルツール実行の強制へ変わるわけではありません。[protocol-11 §8](https://datatracker.ietf.org/doc/html/draft-hardt-oauth-aauth-protocol-11#section-8)
 
 Agentが外部の文章に誘導され、保有する鍵で要求へ署名した場合も、署名は正しく検証され得ます。署名は要求が本人の意図に沿うことの証明ではなく、AAuthはプロンプトインジェクション防止を保証しません。
 
