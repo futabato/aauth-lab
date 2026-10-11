@@ -52,7 +52,15 @@ OAuthと拡張には、委譲した権限を狭め、使用する鍵を確かめ
 
 ## 2. HellōのMCPサーバー開発で表面化した認可の課題
 
-この実装判断が現れた具体例として、HellōのMCPサーバー開発を取り上げます。MCP（Model Context Protocol）は、AIアシスタントなどのアプリケーションを、外部のデータやツールへ接続するためのプロトコルです。[MCP 2025-06-18の概要](https://modelcontextprotocol.io/specification/2025-06-18) 既存の管理APIをそのツールとして提供したHellōの事例は、登録、削除の確認、トークン保管の配置を考える手掛かりになります。
+この実装判断が現れた具体例として、HellōのMCPサーバー開発を取り上げます。MCP（Model Context Protocol）は、AIアプリケーションを外部のデータやツールへ接続するための共通プロトコルです。Anthropicは2024年11月25日の公開記事で、モデルの性能が向上しても、業務データや既存システムとの接続には個別の実装が必要になることを課題として挙げました。
+
+> Every new data source requires its own custom implementation, making truly connected systems difficult to scale.
+>
+> 出典：[Anthropic「Introducing the Model Context Protocol」（2024年11月25日）](https://www.anthropic.com/news/model-context-protocol)
+
+新しいデータソースを追加するたびに専用の実装が必要になり、連携先を増やしにくい、という説明です。MCPは、AIアプリケーションと外部データやツールの間で共通の連携方式を使い、この負担を減らすことを目指しました。
+
+接続の手順を共通にしても、本人からアクセスの許可を得ることや、要求された操作が権限の範囲内かを判断することは、認可の設計として残ります。本記事では、HTTPで認可を使う場合の仕様として2025年6月18日版を参照します。既存の管理APIをMCPツールとして提供したHellōの事例は、登録、削除の確認、トークン保管の配置を考える手掛かりになります。[MCP 2025-06-18 Authorization](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization)
 
 Hellōは、GoogleやAppleなどのログイン手段を、OpenID Connect（OIDC）による一つの接続でアプリに組み込める認証サービスです。開発者は自分のアプリをHellōに登録し、名前、ロゴ、ログイン後の戻り先などを設定します。Developer ConsoleやQuickstartが使う管理APIはOAuthで保護されており、その操作をAIアシスタントへ提供するのがHellōのMCPサーバーです。[Hellō](https://www.hello.coop/)、[Getting Started](https://www.hello.dev/docs/getting-started/)、[Admin API](https://www.hello.dev/docs/apis/admin/)、[Admin MCP Server](https://www.hello.dev/docs/admin-mcp/)
 
