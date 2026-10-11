@@ -28,7 +28,13 @@
 
 OAuthが導入される前の委譲方法の一つに、本人のユーザー名とパスワードを第三者のアプリへ渡す方法がありました。2012年のOAuth 2.0のRFCは、この方法ではアプリが本人の秘密情報を保管し、本人と同じ資格情報で広くアクセスできてしまう点を問題として挙げています。一つのアプリだけを止めたい場合にも、パスワードの変更が他のアプリへ影響します。[RFC 6749 §1](https://www.rfc-editor.org/rfc/rfc6749#section-1)
 
-2012年10月にRFC 6749として公開されたOAuth 2.0は、本人のパスワードをクライアントへ渡す代わりに、認可サーバーが限定されたアクセス権を表すアクセストークンを発行するモデルです。クライアント、認可サーバー、リソースサーバー、リソース所有者の役割を分け、本人の資格情報を扱う処理と、アプリが許可された範囲でAPIを使う処理を分離します。[OAuth 2.0 / RFC 6749 §1](https://www.rfc-editor.org/rfc/rfc6749#section-1)
+RFC 6749の§1は、こうした問題への対応を次のように説明します。
+
+> OAuth addresses these issues by introducing an authorization layer and separating the role of the client from that of the resource owner.
+>
+> 出典：[RFC 6749（2012年10月）§1](https://www.rfc-editor.org/rfc/rfc6749.html#section-1)
+
+認可の層を設け、クライアントとリソース所有者の役割を分けるという説明です。2012年10月にRFC 6749として公開されたOAuth 2.0は、本人のパスワードをクライアントへ渡す代わりに、認可サーバーが限定されたアクセス権を表すアクセストークンを発行するモデルです。クライアント、認可サーバー、リソースサーバー、リソース所有者の役割を分け、本人の資格情報を扱う処理と、アプリが許可された範囲でAPIを使う処理を分離します。[OAuth 2.0 / RFC 6749 §1](https://www.rfc-editor.org/rfc/rfc6749#section-1)
 
 このモデルはGoogle APIやMicrosoft GraphなどのAPIへの委任アクセスに使われています。エージェントもAPIを利用するクライアントとして、この認可基盤を使えます。ここでいう認可はアクセスを許す判断であり、本人が誰かを確かめる認証とは目的が異なります。ログインとAPIの利用許可が同じ画面に現れても、本人の確認とアクセス権の付与は別の処理です。[GoogleのOAuth 2.0案内](https://developers.google.com/identity/protocols/oauth2)、[Microsoft Graphの委任アクセス](https://learn.microsoft.com/en-us/graph/auth-v2-user)
 
@@ -36,11 +42,23 @@ OAuthが導入される前の委譲方法の一つに、本人のユーザー名
 
 本人の資格情報を渡さずに済んでも、アプリへどこまで任せるかは別に設計します。冒頭の例なら、読み取りの権限で始め、削除が必要になった時点で追加同意を求める構成をOAuthでも採れます。追加同意、再認証、操作直前の確認のうち何を求めるかは、アプリケーションの方針です。
 
-許可を細かく表現する拡張がRAR（Rich Authorization Requests）です。単純なscope文字列では表しにくい対象や操作を、JSONの認可要求に記述します。文書Aだけを対象にする設計にも使えますが、対象・操作の意味をAPIごとに定義し、実行側で制約を強制する必要があります。通常の削除scopeを取得するだけで「Aを一度だけ削除する許可」になるわけではありません。[RAR / RFC 9396](https://www.rfc-editor.org/rfc/rfc9396)
+許可を細かく表現する拡張がRAR（Rich Authorization Requests）です。RFC 9396のAbstractは、追加する情報を次のように説明します。
+
+> This document specifies a new parameter `authorization_details` that is used to carry fine-grained authorization data in OAuth messages.
+>
+> 出典：[RFC 9396（2023年5月）Abstract](https://www.rfc-editor.org/rfc/rfc9396.html#abstract)
+
+`authorization_details`は、細かな認可条件をOAuthメッセージに載せるためのパラメーターです。単純なscope文字列では表しにくい対象や操作を、JSONの認可要求に記述します。文書Aだけを対象にする設計にも使えますが、対象・操作の意味をAPIごとに定義し、実行側で制約を強制する必要があります。通常の削除scopeを取得するだけで「Aを一度だけ削除する許可」になるわけではありません。[RAR / RFC 9396](https://www.rfc-editor.org/rfc/rfc9396)
 
 ### トークンと鍵の結び付け
 
-限定したトークンでも、盗まれて使われれば許可の範囲内で被害が生じます。DPoP（Demonstrating Proof of Possession）は、アクセストークンを公開鍵へ結び付け、使用時に対応する秘密鍵の所持を証明する拡張です。トークンだけを盗まれた場合の不正使用を抑えます。DPoP自体はクライアント認証ではなく、鍵の所持だけでアクセスを許す仕組みでもありません。トークンの有効性と権限の検査は引き続き必要です。[DPoP / RFC 9449 §3](https://www.rfc-editor.org/rfc/rfc9449#section-3)
+限定したトークンでも、盗まれて使われれば許可の範囲内で被害が生じます。DPoP（Demonstrating Proof of Possession）は、アクセストークンを公開鍵へ結び付け、使用時に対応する秘密鍵の所持を証明する拡張です。トークンだけを盗まれた場合の不正使用を抑えます。ただし、RFC 9449の§3は、クライアント認証との役割の違いを明示しています。
+
+> The DPoP mechanism presented herein is not a client authentication method.
+>
+> 出典：[RFC 9449（2023年9月）§3](https://www.rfc-editor.org/rfc/rfc9449.html#section-3)
+
+DPoPが示す鍵の所持と、クライアントそのものの認証は別の処理です。必要ならクライアント認証と併用できます。鍵の所持だけでアクセスを許す仕組みでもありません。トークンの有効性と権限の検査は引き続き必要です。[DPoP / RFC 9449 §3](https://www.rfc-editor.org/rfc/rfc9449#section-3)
 
 OAuthと拡張には、委譲した権限を狭め、使用する鍵を確かめる手段があります。それを実際のシステムへ組み込む際には、クライアント登録をどう管理し、追加確認をどこで行い、トークンをどこへ保管するかを決める必要があります。
 
@@ -75,7 +93,13 @@ flowchart LR
 
 Hardtは、利用者が開発環境を切り替えるたびに登録が増え、使われなくなった登録のライフサイクルを管理する負担を懸念しました。記事で述べた対応は、MCP向けの登録要求に共通の`client_id`を返し、任意の`redirect_uri`を受け入れるというものでした。これは著者がその実装で選んだ対応です。MCPやOAuthが一般に勧める構成として読み替えることはできません。[Hardtの登録に関する説明](https://blog.hello.coop/posts/say-hello-to-ai)
 
-この負担は、登録を実装する仕組みと登録情報をどう保持するかを分けて読む必要があります。RFC 7591には共有のクライアントID、ステートレスな登録、software statementなどの議論があります。2025年6月18日版MCPのDCR対応もSHOULDという推奨であり、固定IDや手動登録した情報を利用者が入力するUIという代替を記述しています。DCRやMCPが、個々のインスタンスについて永続的な登録を無制限に作ることを必須としているわけではありません。[RFC 7591 付録A](https://www.rfc-editor.org/rfc/rfc7591#appendix-A)、[MCP 2025-06-18 Authorization](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization#dynamic-client-registration)
+Hardtが述べた負担と、MCP仕様の要求水準は分けて読みます。2025年6月18日版のAuthorization FlowのOverviewには、次の規範文があります。
+
+> Authorization servers and MCP clients SHOULD support the OAuth 2.0 Dynamic Client Registration Protocol (RFC7591).
+>
+> 出典：[MCP 2025-06-18 Authorization「Overview」](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization#overview)
+
+認可サーバーとMCPクライアントにDCR対応を推奨するSHOULDです。前述のとおり認可自体は任意で、HTTPで認可を使う場合の仕様として読みます。同版のDCR節は、非対応の認可サーバーについて、固定IDや手動登録した情報を利用者が入力するUIという代替も記述しています。登録を実装する仕組みと登録情報をどう保持するかは別の判断であり、RFC 7591にも共有のクライアントID、ステートレスな登録、software statementなどの議論があります。DCRやMCPが、個々のインスタンスについて永続的な登録を無制限に作ることを必須としているわけではありません。[RFC 7591 付録A](https://www.rfc-editor.org/rfc/rfc7591#appendix-A)、[MCP 2025-06-18 Authorization](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization#dynamic-client-registration)
 
 ### 削除の確認
 
@@ -87,7 +111,13 @@ HellōのWebコンソールでは、削除の際に利用者が`DELETE`と入力
 
 もう一つの懸念は、クライアントが保持するトークンでした。Hardtは漏えいの危険を考慮して、アクセストークンを再取得するためのrefresh tokenを発行せず、必要になったら再認可する方針を述べています。これは漏えい事故の報告ではありません。長く使える秘密情報をどの実行環境に置き、失効や再認可を誰が管理するかという設計上の懸念です。[Hardtのトークン保管に関する説明](https://blog.hello.coop/posts/say-hello-to-ai)
 
-Hellōでは、削除を除くscopeとrefresh tokenを発行しない方針で、クライアントへ渡す権限と資格情報を限定しました。それでも、クライアントの接続先が増えると、接続先ごとに認可フローとトークンを管理し、必要な対話を仲介する仕事はクライアントに残ります。Hardtはこの負担に対し、処理をMCPサーバー側へ移す提案を出しました。[SEP 1299](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1299)
+Hellōでは、削除を除くscopeとrefresh tokenを発行しない方針で、クライアントへ渡す権限と資格情報を限定しました。それでも、クライアントの接続先が増えると、接続先ごとに認可フローとトークンを管理し、必要な対話を仲介する仕事はクライアントに残ります。Hardtは、実装記事のLessons Learnedでこの配置を次のように評価しています。
+
+> OAuth between the client and server is not a good fit in my opinion.
+>
+> 出典：[Dick Hardt「Say Hellō to AI」（2025年8月4日）Lessons Learned](https://blog.hello.coop/posts/say-hello-to-ai)
+
+クライアントとサーバーの間にOAuthを置く構成が適さない、というHardt本人の見解です。MCPやOAuthの仕様上の結論とは区別します。同じ記事では、拡張で課題を解ける可能性にも触れた上で、リソースの認可をMCPサーバー側へ移し、既存APIにはOAuthを使えると述べています。この問題設定から、処理の配置を変えるSEP 1299の提案へ進みます。[SEP 1299](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1299)
 
 ## 3. MCPの認可に関する提案からAAuthに至る経緯
 
@@ -196,7 +226,13 @@ sequenceDiagram
 
 ## 5. AAuthはOAuthの拡張か、新しいプロトコルか
 
-Hardtはprotocol-11の付録C.4.5で、サーバーをまたいで確認できるAgentの識別、鍵への結び付け、本人側の統治、リソース側との連携を、一つのプロトコルとして設計する理由を述べています。これは著者が別の基礎を選ぶ理由です。OAuth全般で同じ制御を実現できないという確定した結論としては扱えません。[protocol-11 付録C.4.5](https://datatracker.ietf.org/doc/html/draft-hardt-oauth-aauth-protocol-11#appendix-C.4.5)
+Hardtはprotocol-11の付録C.4.5で、必要な変更をOAuthへ重ねると後方互換性を失い、別物になると判断しています。その文の後半では、AAuthの設計方針を次のように記しています。
+
+> AAuth is a new protocol designed for the agent model from the ground up.
+>
+> 出典：[AAuth protocol-11（2026年9月25日、個人提出のInternet-Draft）付録C.4.5](https://datatracker.ietf.org/doc/html/draft-hardt-oauth-aauth-protocol-11#appendix-C.4.5)
+
+Agentのモデルを出発点に、新しいプロトコルを設計するという著者の方針です。サーバーをまたいで確認できるAgentの識別、鍵への結び付け、本人側の統治、リソース側との連携をまとめて扱うために、別の基礎を選ぶ理由として読みます。OAuth全般で同じ制御を実現できないという確定した結論でも、WGの合意でもありません。同じ付録では、既存OAuth基盤をAAuthの背後で利用し、PSが本人認証をOIDCへ任せる補完関係も述べています。新規プロトコルの提案と、既存基盤の利用は両立するという説明です。
 
 2026年10月5日のOAuth作業部会の中間会合（interim）では、必要な機能をどの基礎の上に実装するかが争点になりました。Aaron Pareckiは、新しい要素を切り分けてOAuthの拡張として取り込む案を示しました。Dick Hardtは、異なる基礎に立つ解決策が必要だと応じています。既存基盤から不足する機能を取り込む案や、OAuth拡張とAAuthを併用する案も出ていました。[会合の公開ノート](https://notes.ietf.org/notes-ietf-interim-2026-oauth-06-oauth)、[公開チャットログ](https://datatracker.ietf.org/doc/chatlog-interim-2026-oauth-06-202610051300/)
 
@@ -248,7 +284,13 @@ Hardtも、OAuthへ機能を追加できる可能性自体は否定していま�
 
 JWTの署名とHTTP Message Signaturesの検証だけで、要求中の全情報が保護されると考えてはいけません。基本の必須対象にはメソッド、接続先を表すauthority、URLのpath、`Signature-Key`が含まれます。Resource向け要求の本文やクエリまで常に署名されるわけではなく、追加対象はResourceが`additional_signature_components`で要求します。改ざんの試験では、変更した項目が実際に署名対象だったかを記録します。[protocol-11 §11.3.3.1、§11.2.4](https://datatracker.ietf.org/doc/html/draft-hardt-oauth-aauth-protocol-11#section-11.3.3.1)
 
-DPoPの標準的なproofが要求の全内容を署名するわけではありません。基本の対象にはHTTPメソッドとURI（Uniform Resource Identifier）などが含まれ、メッセージ全体の完全性はTLS（Transport Layer Security）にも依存します。AAuthとの比較では、どの要素を署名し、受信側が何を要求するかまで見る必要があります。[RFC 9449 §4.2](https://www.rfc-editor.org/rfc/rfc9449#section-4.2)
+署名の対象範囲について、RFC 9449の§11.7は次のように説明します。
+
+> DPoP does not ensure the integrity of the payload or headers of requests.
+>
+> 出典：[RFC 9449（2023年9月）§11.7](https://www.rfc-editor.org/rfc/rfc9449.html#section-11.7)
+
+要求の本文やヘッダー全体の完全性を、DPoP単独では保証しないという意味です。基本の対象にはHTTPメソッドとURI（Uniform Resource Identifier）などが含まれ、メッセージ全体の完全性はTLS（Transport Layer Security）にも依存します。AAuthとの比較では、どの要素を署名し、受信側が何を要求するかまで見る必要があります。[RFC 9449 §4.2](https://www.rfc-editor.org/rfc/rfc9449#section-4.2)
 
 ### 補足：五つのアクセスモードと初回の同意
 
