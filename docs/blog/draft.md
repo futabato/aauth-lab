@@ -1,6 +1,6 @@
 # AAuthをめぐるAIエージェントの認可設計の議論
 
-> 推敲中の原稿です。調査基準日は2026年10月9日です。2026年10月10日に主要な一次資料を部分照合し、10月11日に背景説明の公式資料を追加確認しました。仕様の説明と再現実験は `draft-hardt-oauth-aauth-protocol-11` に固定します。実験結果は未実測で、正式公開に向けた確認を残しています。
+> 推敲中の原稿です。調査基準日は2026年10月9日です。2026年10月10日に主要な一次資料を部分照合し、10月11日に背景説明の公式資料を追加確認し、10月12日に用語とRFC 6749第1節の引用を見直しました。仕様の説明と再現実験は `draft-hardt-oauth-aauth-protocol-11` に固定します。実験結果は未実測で、正式公開に向けた確認を残しています。
 
 AIエージェントに外部サービスの情報を参照させる使い方が身近になってきました。CodexにSlackやGoogle Driveのプラグインを入れて接続させれば、Codexから簡単に資料を探させることができ、ユーザはAIエージェントが裏側でどう動いているかをあまり意識せずに便益を受けられます。
 
@@ -12,15 +12,23 @@ AIエージェントに外部サービスの情報を参照させる使い方が
 
 ### パスワード共有とアクセス権の委譲
 
-OAuthが導入される前の委譲方法の一つに、本人のユーザー名とパスワードを第三者のアプリへ渡す方法がありました。2012年のOAuth 2.0のRFCは、この方法ではアプリが本人の秘密情報を保管し、本人と同じ資格情報で広くアクセスできてしまう点を問題として挙げています。一つのアプリだけを止めたい場合にも、パスワードの変更が他のアプリへ影響します。[RFC 6749 §1](https://www.rfc-editor.org/rfc/rfc6749#section-1)
+OAuthが導入される前の委譲方法の一つに、本人のユーザー名とパスワードを外部のソフトウェアへ渡す方法がありました。2012年のOAuth 2.0のRFCは、この方法では外部のソフトウェアが本人の資格情報を保管し、ユーザがアクセス期間や対象を限定できない点を問題として挙げています。複数の外部ソフトウェアに同じサービスのパスワードを渡していた場合、特定の相手のアクセスを取り消すためにパスワードを変更すると、ほかの相手もアクセスできなくなります。[RFC 6749 §1](https://www.rfc-editor.org/rfc/rfc6749#section-1)
 
-RFC 6749の§1は、こうした問題への対応を次のように説明します。
+RFC 6749の§1が挙げる問題点の箇条書きから、二つの項目の冒頭を抜粋します。
 
-> OAuth addresses these issues by introducing an authorization layer and separating the role of the client from that of the resource owner.
+> Third-party applications are required to store the resource owner's credentials
 >
 > 出典：[RFC 6749（2012年10月）§1](https://www.rfc-editor.org/rfc/rfc6749.html#section-1)
 
-認可の層を設け、クライアントとリソース所有者の役割を分けるという説明です。2012年10月にRFC 6749として公開されたOAuth 2.0は、本人のパスワードをクライアントへ渡す代わりに、認可サーバーが限定されたアクセス権を表すアクセストークンを発行するモデルです。クライアント、認可サーバー、リソースサーバー、リソース所有者の役割を分け、本人の資格情報を扱う処理と、アプリが許可された範囲でAPI（サービスへ操作を要求する仕組み）を使う処理を分離します。[OAuth 2.0 / RFC 6749 §1](https://www.rfc-editor.org/rfc/rfc6749#section-1)
+外部のソフトウェアが本人の資格情報を保存する必要がある、という指摘です。続く部分では、後で利用するために保存し、通常は平文のパスワードになると説明しています。
+
+> Third-party applications gain overly broad access to the resource owner's protected resources
+>
+> 出典：[RFC 6749（2012年10月）§1](https://www.rfc-editor.org/rfc/rfc6749.html#section-1)
+
+外部のソフトウェアが必要以上に広いアクセス権を得てしまう、という指摘です。続く部分では、ユーザがアクセス期間や、アクセスを許す対象を一部に限定できないことを述べています。
+
+OAuthは、認可の層を設けてクライアントとリソース所有者の役割を分けます。2012年10月にRFC 6749として公開されたOAuth 2.0は、本人のパスワードをクライアントへ渡す代わりに、認可サーバーが限定されたアクセス権を表すアクセストークンを発行するモデルです。クライアント、認可サーバー、リソースサーバー、リソース所有者の役割を分け、本人の資格情報を扱う処理と、OAuthクライアントが許可された範囲でAPI（サービスへ操作を要求する仕組み）を使う処理を分離します。[OAuth 2.0 / RFC 6749 §1](https://www.rfc-editor.org/rfc/rfc6749#section-1)
 
 ここでいうトークンはアクセス権限などをシステム間で伝えるデータで、LLM（大規模言語モデル）が文章を処理する単位とは異なります。
 
@@ -66,15 +74,15 @@ MCP（Model Context Protocol）は、AIエージェントなどを外部のデ�
 
 この認可を組み込む具体例として、HellōのMCPサーバー開発を取り上げます。既存の管理APIをMCPツールとして提供したHellōの事例は、登録、削除の確認、トークン保管の配置を考える手掛かりになります。
 
-Hellōは、GoogleやAppleなどのログイン手段を、OpenID Connect（OIDC）による一つの接続でアプリに組み込める認証サービスです。開発者は自分のアプリをHellōに登録し、名前、ロゴ、ログイン後の戻り先などを設定します。Developer ConsoleやQuickstartが使う管理APIはOAuthで保護されており、その操作をAIエージェントへ提供するのがHellōのMCPサーバーです。[Hellō](https://www.hello.coop/)、[Getting Started](https://www.hello.dev/docs/getting-started/)、[Admin API](https://www.hello.dev/docs/apis/admin/)、[Admin MCP Server](https://www.hello.dev/docs/admin-mcp/)
+Hellōは、GoogleやAppleなどのログイン手段を、OpenID Connect（OIDC）による一つの接続でサービスに組み込める認証サービスです。開発者は自分が提供するサービスをHellōのOIDCクライアントとして登録し、名前、ロゴ、ログイン後の戻り先などを設定します。Developer ConsoleやQuickstartが使う管理APIはOAuthで保護されており、その操作をAIエージェントへ提供するのがHellōのMCPサーバーです。[Hellō](https://www.hello.coop/)、[Getting Started](https://www.hello.dev/docs/getting-started/)、[Admin API](https://www.hello.dev/docs/apis/admin/)、[Admin MCP Server](https://www.hello.dev/docs/admin-mcp/)
 
-OAuth 2.0のRFC 6749で編集者を務めたDick Hardtは、2025年8月4日、Hellōのアプリを作成・管理するMCPサーバーの実装を紹介しました。VS Code、Cursor、Claudeなどのクライアントから、管理APIをツールとして呼び出す試みです。[RFC 6749の編集者表記](https://www.rfc-editor.org/rfc/rfc6749.html)、[Hardt「Say Hellō to AI」](https://blog.hello.coop/posts/say-hello-to-ai)
+OAuth 2.0のRFC 6749で編集者を務めたDick Hardtは、2025年8月4日、Hellōを利用するサービスの登録情報を作成・管理するMCPサーバーの実装を紹介しました。VS Code、Cursor、Claudeなどのクライアントから、管理APIをツールとして呼び出す試みです。[RFC 6749の編集者表記](https://www.rfc-editor.org/rfc/rfc6749.html)、[Hardt「Say Hellō to AI」](https://blog.hello.coop/posts/say-hello-to-ai)
 
 ### Hellō管理APIへの接続
 
-この例には二種類のアプリ登録が出てきます。一つは、Hellōログインを使う開発者のアプリを、名前・ロゴ・戻り先などとともに登録する業務上の操作です。登録されるHellōアプリのClient IDは、ログイン設定に使います。これが管理APIの操作対象です。[Getting Started](https://www.hello.dev/docs/getting-started/)
+この例には二種類のクライアント登録が出てきます。一つは、Hellōログインを使う開発者のサービスを、名前・ロゴ・戻り先などとともにOIDCクライアントとして登録する業務上の操作です。そのClient IDは、ログイン設定に使います。このサービスの登録情報が管理APIの操作対象です。[Getting Started](https://www.hello.dev/docs/getting-started/)
 
-もう一つは、その管理操作を呼び出すMCPクライアントのOAuth登録です。DCR（Dynamic Client Registration、動的クライアント登録）を使う場合、呼び出し側のメタデータを認可サーバーへ送り、OAuthの`client_id`などを受け取ります。このIDは保護されたMCPサーバーへの接続に使い、管理対象のHellōアプリのClient IDとは目的が異なります。[DCR / RFC 7591](https://www.rfc-editor.org/rfc/rfc7591)、[MCPのクライアント登録](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization#dynamic-client-registration)
+もう一つは、その管理操作を呼び出すMCPクライアントのOAuth登録です。DCR（Dynamic Client Registration、動的クライアント登録）を使う場合、呼び出し側のメタデータを認可サーバーへ送り、OAuthの`client_id`などを受け取ります。このIDは保護されたMCPサーバーへの接続に使い、管理対象のサービスのClient IDとは目的が異なります。[DCR / RFC 7591](https://www.rfc-editor.org/rfc/rfc7591)、[MCPのクライアント登録](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization#dynamic-client-registration)
 
 本人の権限で管理APIを使うには、クライアント登録とは別に本人のログインと同意を経て、アクセストークンを取得します。OAuthの`client_id`は呼び出し側を識別する値であり、本人のIDや削除の許可を表しません。次の図は、登録とアクセストークン取得を済ませた後のツール呼び出しだけを示します。Hardtの実装の通信記録ではなく、トークンの形式や管理APIへの資格情報の渡し方も特定しません。
 
@@ -274,7 +282,7 @@ Hardtも、OAuthへ機能を追加できる可能性自体は否定していま�
 
 `aauth-lab`では、固定スクリプトのAgent、PS、架空の文書APIを持つResourceで三者の認可フローを観測します。APはテスト用のagent tokenとメタデータの発行元です。初期の認証情報取得を行うbootstrapはラボの処理で代替し、独立したAS、大規模言語モデル、多段の呼び出しは初期範囲に含めません。条件は[ルートREADME](../../README.md)に置いています。
 
-現時点でコードは存在しますが、今回の執筆作業ではサーバーの起動やテストを実行していません。実装はprotocol-11に未準拠で、[仕様対応表](../conformance-11.md)もコード読解による記録です。同意画面には本人認証がなく、Agentが自分の要求を承認できます。Aliceへの初回の結び付けと最初の承認もテスト用の代行処理であり、本人確認と初回同意を検証したことにはなりません。承認の状態遷移を観測できても、本人の判断が守られた証明にはできません。
+コードは存在し、2026年10月12日の文書確認ではmypy・ruffと既存テスト11件の通過を確認しました。ただし、記事に載せる通信順序やデータの前後差分を揃える実測は未実施です。実装はprotocol-11に未準拠で、[仕様対応表](../conformance-11.md)もコード読解による記録です。同意画面には本人認証がなく、Agentが自分の要求を承認できます。Aliceへの初回の結び付けと最初の承認もテスト用の代行処理であり、本人確認と初回同意を検証したことにはなりません。承認の状態遷移を観測できても、本人の判断が守られた証明にはできません。
 
 鍵の不一致、期限切れ、別のaudience、無効なJWT署名、署名後のHTTP要求の改ざんは、それぞれ独立した陰性試験にします。たとえば期限切れを試す際はHTTP署名の時刻を有効に保ち、トークンの`exp`だけを失敗条件にします。画面にエラーが出たことやHTTPステータスだけで判断せず、APIの実行記録と前後のリソース状態を照合します。
 
