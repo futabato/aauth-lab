@@ -8,7 +8,7 @@ AIエージェントに外部サービスの情報を参照させる使い方が
 
 このように、誰にどの情報へのアクセスや操作を許すかを決め、個々の要求に対して実行を許可するかを判断することを、認可と呼びます。本稿では今IETFで議論されているAAuthと呼ばれる認可プロトコルを取り上げ、その背景にある課題と、AIエージェントの認可の仕組みをどう設計するかをめぐる議論を紹介します。
 
-## 1. OAuthによるアプリケーションへの権限の委譲
+## 1. OAuthの登場背景と権限委譲の仕組み
 
 ### パスワード共有とアクセス権の委譲
 
@@ -54,7 +54,7 @@ OAuthと拡張には、委譲した権限を狭め、使用する鍵を確かめ
 
 ## 2. HellōのMCPサーバー開発で表面化した認可の課題
 
-この実装判断が現れた具体例として、HellōのMCPサーバー開発を取り上げます。MCP（Model Context Protocol）は、AIエージェントなどを外部のデータやツールへ接続するための共通プロトコルです。Anthropicは2024年11月25日の公開記事で、モデルの性能が向上しても、業務データや既存システムとの接続には個別の実装が必要になることを課題として挙げました。
+MCP（Model Context Protocol）は、AIエージェントなどを外部のデータやツールへ接続するための共通プロトコルです。Anthropicは2024年11月25日の公開記事で、モデルの性能が向上しても、業務データや既存システムとの接続には個別の実装が必要になることを課題として挙げました。
 
 > Every new data source requires its own custom implementation, making truly connected systems difficult to scale.
 >
@@ -62,15 +62,15 @@ OAuthと拡張には、委譲した権限を狭め、使用する鍵を確かめ
 
 新しいデータソースを追加するたびに専用の実装が必要になり、連携先を増やしにくい、という説明です。MCPは、AIエージェントなどと外部データやツールの間で共通の連携方式を使い、この負担を減らすことを目指しました。
 
-接続の手順を共通にしても、本人からアクセスの許可を得ることや、要求された操作が権限の範囲内かを判断することは、認可の設計として残ります。本記事では、HTTPで認可を使う場合の仕様として2025年6月18日版を参照します。既存の管理APIをMCPツールとして提供したHellōの事例は、登録、削除の確認、トークン保管の配置を考える手掛かりになります。[MCP 2025-06-18 Authorization](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization)
+接続の手順を共通にしても、本人からアクセスの許可を得ることや、要求された操作が権限の範囲内かを判断することは、認可の設計として残ります。HTTPで接続するMCPサーバーへのアクセスに認可制御を設ける場合、MCPの2025年6月18日版の仕様では、OAuth 2.1を基にした認可の仕組みに従うことを推奨しています（SHOULD）。[MCP 2025-06-18 Authorization](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization)
+
+この認可を組み込む具体例として、HellōのMCPサーバー開発を取り上げます。既存の管理APIをMCPツールとして提供したHellōの事例は、登録、削除の確認、トークン保管の配置を考える手掛かりになります。
 
 Hellōは、GoogleやAppleなどのログイン手段を、OpenID Connect（OIDC）による一つの接続でアプリに組み込める認証サービスです。開発者は自分のアプリをHellōに登録し、名前、ロゴ、ログイン後の戻り先などを設定します。Developer ConsoleやQuickstartが使う管理APIはOAuthで保護されており、その操作をAIエージェントへ提供するのがHellōのMCPサーバーです。[Hellō](https://www.hello.coop/)、[Getting Started](https://www.hello.dev/docs/getting-started/)、[Admin API](https://www.hello.dev/docs/apis/admin/)、[Admin MCP Server](https://www.hello.dev/docs/admin-mcp/)
 
 OAuth 2.0のRFC 6749で編集者を務めたDick Hardtは、2025年8月4日、Hellōのアプリを作成・管理するMCPサーバーの実装を紹介しました。VS Code、Cursor、Claudeなどのクライアントから、管理APIをツールとして呼び出す試みです。[RFC 6749の編集者表記](https://www.rfc-editor.org/rfc/rfc6749.html)、[Hardt「Say Hellō to AI」](https://blog.hello.coop/posts/say-hello-to-ai)
 
 ### Hellō管理APIへの接続
-
-MCPの2025年6月18日版は、HTTPで認可を使う場合にOAuth 2.1ベースのフローを推奨しています（SHOULD）。MCPで認可を使うこと自体は任意で、stdioでの実行は別に扱います。Hellōの例は、保護された管理APIをクライアントから呼ぶために、この認可を組み込む場面です。[MCP 2025-06-18 Authorization](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization)
 
 この例には二種類のアプリ登録が出てきます。一つは、Hellōログインを使う開発者のアプリを、名前・ロゴ・戻り先などとともに登録する業務上の操作です。登録されるHellōアプリのClient IDは、ログイン設定に使います。これが管理APIの操作対象です。[Getting Started](https://www.hello.dev/docs/getting-started/)
 
@@ -97,7 +97,7 @@ Hardtが述べた負担と、MCP仕様の要求水準は分けて読みます。
 >
 > 出典：[MCP 2025-06-18 Authorization「Overview」](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization#overview)
 
-認可サーバーとMCPクライアントにDCR対応を推奨するSHOULDです。前述のとおり認可自体は任意で、HTTPで認可を使う場合の仕様として読みます。同版のDCR節は、非対応の認可サーバーについて、固定IDや手動登録した情報を利用者が入力するUIという代替も記述しています。登録を実装する仕組みと登録情報をどう保持するかは別の判断であり、RFC 7591にも共有のクライアントID、ステートレスな登録、software statementなどの議論があります。DCRやMCPが、個々のインスタンスについて永続的な登録を無制限に作ることを必須としているわけではありません。[RFC 7591 付録A](https://www.rfc-editor.org/rfc/rfc7591#appendix-A)、[MCP 2025-06-18 Authorization](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization#dynamic-client-registration)
+認可サーバーとMCPクライアントにDCR対応を推奨するSHOULDです。HTTPで接続するMCPサーバーに認可制御を設ける場合の仕様として読みます。同版のDCR節は、非対応の認可サーバーについて、固定IDや手動登録した情報を利用者が入力するUIという代替も記述しています。登録を実装する仕組みと登録情報をどう保持するかは別の判断であり、RFC 7591にも共有のクライアントID、ステートレスな登録、software statementなどの議論があります。DCRやMCPが、個々のインスタンスについて永続的な登録を無制限に作ることを必須としているわけではありません。[RFC 7591 付録A](https://www.rfc-editor.org/rfc/rfc7591#appendix-A)、[MCP 2025-06-18 Authorization](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization#dynamic-client-registration)
 
 ### 削除の確認
 
