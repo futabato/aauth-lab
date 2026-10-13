@@ -1,6 +1,6 @@
 # AAuthをめぐるAIエージェントの認可設計の議論
 
-> 推敲中の原稿です。調査基準日は2026年10月9日です。2026年10月10日に主要な一次資料を部分照合し、10月11日に背景説明の公式資料を追加確認し、10月12日に用語とRFC 6749第1節の引用を見直しました。仕様の説明と再現実験は `draft-hardt-oauth-aauth-protocol-11` に固定します。実験結果は未実測で、正式公開に向けた確認を残しています。
+> 推敲中の原稿です。調査基準日は2026年10月9日です。2026年10月10日に主要な一次資料を部分照合し、10月11日に背景説明の公式資料を追加確認し、10月12日に用語とRFC 6749第1節の引用を見直し、10月13日にOAuthの委譲範囲と本人の権限の違いを追記しました。仕様の説明と再現実験は `draft-hardt-oauth-aauth-protocol-11` に固定します。実験結果は未実測で、正式公開に向けた確認を残しています。
 
 AIエージェントに外部サービスの情報を参照させる使い方が身近になってきました。CodexにSlackやGoogle Driveのプラグインを入れて接続させれば、Codexから簡単に資料を探させることができ、ユーザはAIエージェントが裏側でどう動いているかをあまり意識せずに便益を受けられます。
 
@@ -33,6 +33,8 @@ OAuthは、認可の層を設けてクライアントとリソース所有者の
 ここでいうトークンはアクセス権限などをシステム間で伝えるデータで、LLM（大規模言語モデル）が文章を処理する単位とは異なります。
 
 OAuthはGoogle APIやMicrosoft GraphなどのAPIへの委任アクセスに広く使われています。AIエージェントもAPIを利用するクライアントとして、この認可基盤を使えます。ここでいう認可はアクセスを許す判断であり、本人が誰かを確かめる認証とは目的が異なります。ログインとAPIの利用許可が同じ画面に現れても、本人の確認とアクセス権の付与は別の処理です。[GoogleのOAuth 2.0案内](https://developers.google.com/identity/protocols/oauth2)、[Microsoft Graphの委任アクセス](https://learn.microsoft.com/en-us/graph/auth-v2-user)
+
+ユーザからの委譲では、本人のパスワードをAIエージェントへ渡さずに、サービスへのアクセスを許可できます。ただし、ユーザに代わってアクセスすることは、ユーザ本人の権限がすべてAIエージェントへ渡ることを意味しません。実行できる操作は、サービスが提供する権限、実際に許可された範囲（scope）、対象データのアクセス制御などで決まります。[RFC 6749 §1.4](https://www.rfc-editor.org/rfc/rfc6749.html#section-1.4)、[§3.3](https://www.rfc-editor.org/rfc/rfc6749.html#section-3.3)、[Microsoft Graphの委譲された権限](https://learn.microsoft.com/en-us/graph/permissions-overview#delegated-permissions)
 
 Codexのプラグイン接続の設定は、[OpenAIのプラグイン案内](https://learn.chatgpt.com/docs/plugins)にまとめられています。
 
